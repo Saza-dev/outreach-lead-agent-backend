@@ -9,13 +9,10 @@ app = FastAPI(title="AI Lead Scraper API", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "https://outreach-lead-agent-frontend.vercel.app/"
-    ], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # Allow all domains
+    allow_credentials=False,
+    allow_methods=["*"],  # Allow POST, GET, OPTIONS, etc.
+    allow_headers=["*"],  # Allow all headers
 )
 
 class ScrapeRequest(BaseModel):
