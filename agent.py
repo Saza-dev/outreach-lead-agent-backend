@@ -36,26 +36,39 @@ class AgentState(TypedDict):
 # 2. HELPER FUNCTIONS
 # ==========================================
 async def scrape_website_text(url: str) -> str:
-    """Visits homepage, hunts for a contact page, and extracts data from both."""
+    """Visits homepage, hunts for a contact page, and extracts data from both (RAM Optimized)."""
     
-    # --- TARGETED WINDOWS FIX ---
-    # Force the correct event loop policy right before Playwright starts
     if sys.platform == "win32":
         import asyncio
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    # ----------------------------
     
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            # --- 
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-dev-shm-usage", # Crucial for Docker: stops Chrome from using shared memory
+                    "--no-sandbox",            # Required for running as root in Docker
+                    "--disable-gpu",           # We don't need graphics
+                    "--disable-extensions",    # Block all extensions
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    "--mute-audio",
+                    "--no-zygote",             # Reduces process memory overhead
+                    "--single-process"         # Forces Chrome to run in one process instead of spawning many
+                ]
+            )
+            # ---------------------------------------
+            
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
 
-            # NEW: Block images, fonts, and CSS to make scraping lightning fast
+            # Block heavy resources
             async def intercept_route(route):
-                if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                if route.request.resource_type in ["image", "media", "font", "stylesheet", "websocket"]:
                     await route.abort()
                 else:
                     await route.continue_()
@@ -67,13 +80,9 @@ async def scrape_website_text(url: str) -> str:
             html = await page.content()
             soup = BeautifulSoup(html, 'html.parser')
             
-            # Extract basic text (limited to 2500 chars to save space)
             text_content = soup.get_text(separator=' ', strip=True)[:2500]
-            
-            # Get all links
             links = [a.get('href') for a in soup.find_all('a', href=True) if a.get('href')]
             
-            # Find Socials and Emails on Homepage
             social_links = [l for l in links if 'facebook.com' in l or 'instagram.com' in l or 'linkedin.com' in l]
             email_links = [l.replace('mailto:', '').split('?')[0] for l in links if l.startswith('mailto:')]
             
@@ -81,11 +90,10 @@ async def scrape_website_text(url: str) -> str:
             contact_url = None
             for link in links:
                 if 'contact' in link.lower() or 'about' in link.lower():
-                    # This safely combines "site.com" with "/contact"
                     contact_url = urllib.parse.urljoin(url, link)
-                    break # Stop looking once we find the first contact link
+                    break 
             
-            # --- 3. SCRAPE THE CONTACT PAGE (If found) ---
+            # --- 3. SCRAPE THE CONTACT PAGE ---
             if contact_url and contact_url != url:
                 try:
                     print(f"      -> 🕵️ Found Contact Page: {contact_url}")
@@ -93,27 +101,22 @@ async def scrape_website_text(url: str) -> str:
                     contact_html = await page.content()
                     contact_soup = BeautifulSoup(contact_html, 'html.parser')
                     
-                    # Add contact page text to our existing text
                     text_content += "\n\n--- CONTACT PAGE TEXT ---\n" + contact_soup.get_text(separator=' ', strip=True)[:2000]
                     
-                    # Look for hidden emails on the contact page
                     contact_links = [a.get('href') for a in contact_soup.find_all('a', href=True) if a.get('href')]
                     email_links.extend([l.replace('mailto:', '').split('?')[0] for l in contact_links if l.startswith('mailto:')])
                 except Exception as ce:
                     print(f"      -> ⚠️ Couldn't load contact page: {ce}")
 
+            await page.close()
+            await context.close()
             await browser.close()
+            # -----------------------------------
 
-            # Clean up the email list (remove duplicates)
             email_links = list(set(email_links))
-            
-            # NEW: Use Regex to find any plain-text emails hidden in the paragraphs
             text_emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', text_content)
-            
-            # Combine the mailto links and the text emails, then remove duplicates again
             all_found_emails = list(set(email_links + text_emails))
             
-            # Feed everything to the LLM
             clean_data = f"TEXT: {text_content} \n\n SOCIAL LINKS: {social_links} \n\n HIDDEN EMAIL LINKS: {all_found_emails}"
             return clean_data
             
