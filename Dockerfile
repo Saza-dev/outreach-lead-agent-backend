@@ -1,6 +1,6 @@
 # 1. Use Microsoft's official Playwright Python image 
 # (This automatically includes Chromium and ALL required Linux dependencies!)
-FROM mcr.microsoft.com/playwright/python:v1.42.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 # 2. Set the working directory inside the container
 WORKDIR /app
