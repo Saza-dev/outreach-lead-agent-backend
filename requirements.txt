@@ -6,6 +6,6 @@ playwright
 langchain-groq
 langchain-core
 langgraph
-duckduckgo-search
+ddgs
 beautifulsoup4
 python-dotenv
