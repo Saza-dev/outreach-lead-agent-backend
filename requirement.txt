@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+pandas
+playwright
+langchain-groq
+langchain-core
+langgraph
+duckduckgo-search
+beautifulsoup4
